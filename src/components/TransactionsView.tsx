@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
-import { Account, Category, Transaction } from '../types';
+import { Account, AutoCategoryRule, Category, Transaction } from '../types';
 import { formatDateWithWeekday, formatCurrency, formatSignedAmount, MONTH_NAMES_PT } from '../utils/formatters';
 import { AddTransactionBar } from './AddTransactionBar';
+import { getAccountTransactionImpact, getCurrentDateInputValue, getYearOptions } from '../lib/persistence';
 import {
   ChevronLeft,
   ChevronRight,
@@ -31,6 +32,8 @@ interface TransactionsViewProps {
   onNextMonth: () => void;
   onSelectMonthYear: (year: number, month: number) => void;
   onAddTransaction: (tx: Omit<Transaction, 'id'>, count?: number) => void;
+  rules: AutoCategoryRule[];
+  onCreateRule: (rule: AutoCategoryRule) => void;
   onDeleteTransactions: (ids: string[]) => void;
   onDeleteTransaction: (id: string) => void;
   onEditTransaction: (tx: Transaction) => void;
@@ -53,6 +56,8 @@ export const TransactionsView: React.FC<TransactionsViewProps> = ({
   onNextMonth,
   onSelectMonthYear,
   onAddTransaction,
+  rules,
+  onCreateRule,
   onDeleteTransactions,
   onDeleteTransaction,
   onEditTransaction,
@@ -80,11 +85,10 @@ export const TransactionsView: React.FC<TransactionsViewProps> = ({
     if (!tx.date.startsWith(monthStr)) return false;
 
     // Accounts filter
-    if (selectedAccountIds.length > 0) {
-      const acc = accounts.find(a => a.name === tx.account);
-      if (acc && !selectedAccountIds.includes(acc.id)) {
-        return false;
-      }
+    if (selectedAccountIds.length === 0) return false;
+    if (selectedAccountIds.length < accounts.length) {
+      const account = accounts.find((item) => item.name === tx.account);
+      if (!account || !selectedAccountIds.includes(account.id)) return false;
     }
 
     // Category filter
@@ -121,10 +125,38 @@ export const TransactionsView: React.FC<TransactionsViewProps> = ({
   const dates = Object.keys(groupedByDate).sort();
 
   // Calculate daily progressive balance
-  let runningBalance = 0;
+  const monthStart = `${monthStr}-01`;
+  const openingBalance = accounts
+    .filter((account) => selectedAccountIds.includes(account.id))
+    .reduce((total, account) => {
+      const priorTransactions = transactions
+        .filter(
+          (transaction) =>
+            transaction.date < monthStart &&
+            transaction.isConsolidated &&
+            statusFilter !== 'pending'
+        )
+        .reduce((sum, transaction) => sum + getAccountTransactionImpact(transaction, account.name), 0);
+      return total + (statusFilter === 'pending' ? 0 : account.initialBalance) + priorTransactions;
+    }, 0);
+  let runningBalance = openingBalance;
   const dailyBalances: Record<string, number> = {};
   dates.forEach((d) => {
-    const dayTotal = groupedByDate[d].reduce((acc, t) => acc + t.amount, 0);
+    const dayTotal = groupedByDate[d].reduce(
+      (total, transaction) =>
+        total +
+        accounts
+          .filter((account) => selectedAccountIds.includes(account.id))
+          .reduce(
+            (impact, account) =>
+              impact +
+              (transaction.isConsolidated
+                ? getAccountTransactionImpact(transaction, account.name)
+                : 0),
+            0
+          ),
+      0
+    );
     runningBalance += dayTotal;
     dailyBalances[d] = runningBalance;
   });
@@ -187,7 +219,7 @@ export const TransactionsView: React.FC<TransactionsViewProps> = ({
 
             {monthDropdownOpen && (
               <div className="absolute top-full left-0 mt-1 w-52 bg-white border border-[#888888] shadow-xl py-1 z-30 max-h-60 overflow-y-auto">
-                {[2026, 2027].map(yr => (
+                {getYearOptions(transactions, selectedYear).map(yr => (
                   <div key={yr}>
                     <div className="px-3 py-1 font-bold text-[12px] bg-gray-100 text-[#000000]">{yr}</div>
                     {MONTH_NAMES_PT.map((m, idx) => (
@@ -367,11 +399,13 @@ export const TransactionsView: React.FC<TransactionsViewProps> = ({
         <AddTransactionBar
           accounts={accounts}
           categories={categories}
-          currentDateStr={`${selectedYear}-${String(selectedMonth + 1).padStart(2, '0')}-09`}
+          currentDateStr={getCurrentDateInputValue()}
           onSave={(newTx, count) => {
             onAddTransaction(newTx, count);
             setShowAddBar(false);
           }}
+          rules={rules}
+          onCreateRule={onCreateRule}
           onCancel={() => setShowAddBar(false)}
         />
       )}
@@ -396,7 +430,7 @@ export const TransactionsView: React.FC<TransactionsViewProps> = ({
           <div className="w-10 px-1 text-center font-black" title="Status de consolidação">C</div>
         </div>
 
-        {/* Global Summary Row: "[-] Todos | Saldo no dia 31/10/2026 R$ 0,00 [x]" */}
+        {/* Opening balance for the selected month */}
         <div className="flex items-center justify-between bg-[#edf3f8] border-b border-[#b8cce0] px-3 py-2 font-bold text-[#000000]">
           <div className="flex items-center gap-2">
             <button
@@ -409,8 +443,8 @@ export const TransactionsView: React.FC<TransactionsViewProps> = ({
           </div>
           <div className="flex items-center gap-6">
             <div className="text-[14px] font-bold text-[#000000]">
-              Saldo no dia 31/{String(selectedMonth === 0 ? 12 : selectedMonth).padStart(2, '0')}/{selectedMonth === 0 ? selectedYear - 1 : selectedYear}
-              <span className="ml-3 tabular-nums font-black text-[#000000]">R$ 0,00</span>
+              Saldo em {new Date(selectedYear, selectedMonth, 0).toLocaleDateString('pt-BR')}
+              <span className="ml-3 tabular-nums font-black text-[#000000]">{formatCurrency(openingBalance)}</span>
             </div>
             <input
               type="checkbox"

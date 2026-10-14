@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { X, Calendar as CalendarIcon } from 'lucide-react';
 import { formatDateBR } from '../utils/formatters';
 
@@ -20,14 +20,26 @@ export const ExportModal: React.FC<ExportModalProps> = ({
   isOpen,
   onClose,
   onConfirmExport,
-  defaultStartDate = '2026-11-01',
-  defaultEndDate = '2026-11-30',
+  defaultStartDate,
+  defaultEndDate,
 }) => {
-  const [startDate, setStartDate] = useState(defaultStartDate);
-  const [endDate, setEndDate] = useState(defaultEndDate);
+  const currentDate = new Date();
+  const currentMonthStart = `${currentDate.getFullYear()}-${String(currentDate.getMonth() + 1).padStart(2, '0')}-01`;
+  const currentMonthEnd = `${currentDate.getFullYear()}-${String(currentDate.getMonth() + 1).padStart(2, '0')}-${String(new Date(currentDate.getFullYear(), currentDate.getMonth() + 1, 0).getDate()).padStart(2, '0')}`;
+  const initialStartDate = defaultStartDate ?? currentMonthStart;
+  const initialEndDate = defaultEndDate ?? currentMonthEnd;
+  const [startDate, setStartDate] = useState(initialStartDate);
+  const [endDate, setEndDate] = useState(initialEndDate);
   const [format, setFormat] = useState<'pdf' | 'xls'>('pdf');
   const [orientation, setOrientation] = useState<'portrait' | 'landscape'>('portrait');
   const [printFilters, setPrintFilters] = useState(true);
+
+  useEffect(() => {
+    if (isOpen) {
+      setStartDate(initialStartDate);
+      setEndDate(initialEndDate);
+    }
+  }, [initialEndDate, initialStartDate, isOpen]);
 
   if (!isOpen) return null;
 
@@ -107,7 +119,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({
                 onChange={() => setFormat('xls')}
                 className="accent-[#0078d7] w-4 h-4"
               />
-              <span className="font-bold">XLS</span>
+              <span className="font-bold">Excel (.xlsx)</span>
             </label>
           </div>
 

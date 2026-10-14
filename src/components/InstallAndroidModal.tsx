@@ -50,7 +50,7 @@ export const InstallAndroidModal: React.FC<InstallAndroidModalProps> = ({
             </div>
             <div>
               <h3 className="font-black text-[16.5px] leading-tight">Instalar Minhas Economias</h3>
-              <p className="text-[12px] text-green-100 font-medium">Aplicativo Oficial para Android e Telas Móveis</p>
+              <p className="text-[12px] text-green-100 font-medium">Acesso rápido aos seus dados neste dispositivo</p>
             </div>
           </div>
           <button
@@ -88,7 +88,7 @@ export const InstallAndroidModal: React.FC<InstallAndroidModalProps> = ({
                     <span className="text-[#82af07] font-black">✓</span> Modo tela cheia sem barras do navegador
                   </li>
                   <li className="flex items-center gap-2">
-                    <span className="text-[#82af07] font-black">✓</span> Funciona offline com dados sincronizados
+                    <span className="text-[#82af07] font-black">✓</span> Acesso offline aos dados salvos neste dispositivo
                   </li>
                   <li className="flex items-center gap-2">
                     <span className="text-[#82af07] font-black">✓</span> Leve, rápido e sem ocupar espaço de memória

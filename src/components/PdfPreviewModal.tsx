@@ -1,13 +1,15 @@
 import React, { useState } from 'react';
-import { Transaction } from '../types';
+import { Account, Transaction } from '../types';
 import { formatDateBR, formatDateShortYear, formatDateWithWeekday, formatCurrency } from '../utils/formatters';
 import { Logo } from './Logo';
 import { Printer, Download, X, ZoomIn, ZoomOut, RotateCw, FileSpreadsheet } from 'lucide-react';
+import { getAccountTransactionImpact } from '../lib/persistence';
 
 interface PdfPreviewModalProps {
   isOpen: boolean;
   onClose: () => void;
   transactions: Transaction[];
+  accounts: Account[];
   startDate: string;
   endDate: string;
   orientation?: 'portrait' | 'landscape';
@@ -17,6 +19,7 @@ export const PdfPreviewModal: React.FC<PdfPreviewModalProps> = ({
   isOpen,
   onClose,
   transactions,
+  accounts,
   startDate,
   endDate,
   orientation = 'portrait',
@@ -41,10 +44,32 @@ export const PdfPreviewModal: React.FC<PdfPreviewModalProps> = ({
   const dates = Object.keys(groupedByDate).sort();
 
   // Calculate cumulative daily balances
-  let runningBalance = 0;
+  let runningBalance = accounts.reduce((total, account) => total + account.initialBalance, 0);
+  const openingDate = new Date(`${startDate}T00:00:00`);
+  const openingDay = new Date(openingDate.getFullYear(), openingDate.getMonth(), openingDate.getDate() - 1);
+  const openingDateString = `${openingDay.getFullYear()}-${String(openingDay.getMonth() + 1).padStart(2, '0')}-${String(openingDay.getDate()).padStart(2, '0')}`;
+  transactions
+    .filter((transaction) => transaction.date < startDate && transaction.isConsolidated)
+    .forEach((transaction) => {
+      runningBalance += accounts.reduce(
+        (impact, account) => impact + getAccountTransactionImpact(transaction, account.name),
+        0
+      );
+    });
+  const openingBalance = runningBalance;
   const dailyBalances: Record<string, number> = {};
   dates.forEach(d => {
-    const dayTotal = groupedByDate[d].reduce((acc, t) => acc + t.amount, 0);
+    const dayTotal = groupedByDate[d]
+      .filter((transaction) => transaction.isConsolidated)
+      .reduce(
+        (total, transaction) =>
+          total +
+          accounts.reduce(
+            (impact, account) => impact + getAccountTransactionImpact(transaction, account.name),
+            0
+          ),
+        0
+      );
     runningBalance += dayTotal;
     dailyBalances[d] = runningBalance;
   });
@@ -55,8 +80,16 @@ export const PdfPreviewModal: React.FC<PdfPreviewModalProps> = ({
 
   const handleDownloadCSV = () => {
     const header = 'Data;Descricao;Categoria;Conta;Valor (R$);Status\n';
-    const rows = filteredTxs.map(t => 
-      `${formatDateBR(t.date)};"${t.description}";"${t.category}";"${t.account}";"${t.amount.toFixed(2).replace('.', ',')}";"${t.isConsolidated ? 'Consolidado' : 'Pendente'}"`
+    const escape = (value: string) => `"${value.replace(/"/g, '""')}"`;
+    const rows = filteredTxs.map(t =>
+      [
+        formatDateBR(t.date),
+        escape(t.description),
+        escape(t.category),
+        escape(t.account),
+        escape(t.amount.toFixed(2).replace('.', ',')),
+        escape(t.isConsolidated ? 'Consolidado' : 'Pendente'),
+      ].join(';')
     ).join('\n');
     
     const blob = new Blob(['\uFEFF' + header + rows], { type: 'text/csv;charset=utf-8;' });
@@ -65,6 +98,7 @@ export const PdfPreviewModal: React.FC<PdfPreviewModalProps> = ({
     link.href = url;
     link.download = `Extrato_MinhasEconomias_${startDate}_${endDate}.csv`;
     link.click();
+    window.setTimeout(() => URL.revokeObjectURL(url), 1000);
   };
 
   return (
@@ -150,7 +184,11 @@ export const PdfPreviewModal: React.FC<PdfPreviewModalProps> = ({
           {/* Header Row: Date on left, Logo on right */}
           <div className="flex items-start justify-between mb-3">
             <div className="text-[13.5px] text-[#000000] font-bold pt-1">
-              9 de Outubro de 2026
+              {new Date().toLocaleDateString('pt-BR', {
+                day: 'numeric',
+                month: 'long',
+                year: 'numeric',
+              })}
             </div>
             <div>
               <Logo size="md" />
@@ -170,8 +208,8 @@ export const PdfPreviewModal: React.FC<PdfPreviewModalProps> = ({
 
           {/* Saldo anterior no dia */}
           <div className="flex justify-end gap-16 font-black text-[13px] text-[#000000] mb-4">
-            <span>Saldo no dia 31/10/26</span>
-            <span className="tabular-nums">R$ 0,00</span>
+            <span>Saldo em {formatDateBR(openingDateString)}</span>
+            <span className="tabular-nums">{formatCurrency(openingBalance)}</span>
           </div>
 
           {/* Grouped Days */}

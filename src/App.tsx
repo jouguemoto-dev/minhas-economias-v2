@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Account, Category, Transaction, Dream } from './types';
 import {
   INITIAL_ACCOUNTS,
@@ -22,174 +22,87 @@ import { EditTransactionModal } from './components/EditTransactionModal';
 import { InstallAndroidModal } from './components/InstallAndroidModal';
 import { MobileBottomNav } from './components/MobileBottomNav';
 import { OfflineIndicator } from './components/OfflineIndicator';
-import { AuthScreen } from './components/AuthScreen';
 import { usePWAInstall } from './hooks/usePWAInstall';
-import { Wallet, Smartphone, X, Sparkles } from 'lucide-react';
+import { Wallet, X, Sparkles } from 'lucide-react';
 import { formatCurrency } from './utils/formatters';
-import { AuthResponse, FinanceData, getFinanceData, logout, saveFinanceData } from './lib/api';
+import { ImportTransactionsModal } from './components/ImportTransactionsModal';
+import { AutoCategoryRule } from './types';
+import {
+  createId,
+  formatDateInput,
+  getAccountTransactionImpact,
+  getCurrentDateInputValue,
+  getYearOptions,
+  loadInitialFinanceData,
+} from './lib/persistence';
 
 export default function App() {
-  const [sessionToken, setSessionToken] = useState<string | null>(
-    () => localStorage.getItem('me_auth_token_v1')
-  );
-  const [userEmail, setUserEmail] = useState(
-    () => localStorage.getItem('me_auth_email_v1') ?? ''
-  );
-  const [authLoading, setAuthLoading] = useState(
-    () => Boolean(localStorage.getItem('me_auth_token_v1'))
-  );
-  const [authError, setAuthError] = useState('');
-  const [dataLoaded, setDataLoaded] = useState(false);
-  const [syncError, setSyncError] = useState('');
-  const saveQueue = useRef<Promise<void>>(Promise.resolve());
-
+  const [initialData] = useState(loadInitialFinanceData);
+  const [storageWarning, setStorageWarning] = useState(initialData.warning);
   // Navigation tab state
   const [activeTab, setActiveTab] = useState<string>('inicio');
 
-  // Month and year state (Defaults to October 2026 for Dashboard, November 2026 for Transações)
-  const [selectedMonth, setSelectedMonth] = useState<number>(9); // 0-indexed: 9 = Outubro
-  const [selectedYear, setSelectedYear] = useState<number>(2026);
+  const currentDate = new Date();
+  const [selectedMonth, setSelectedMonth] = useState<number>(currentDate.getMonth());
+  const [selectedYear, setSelectedYear] = useState<number>(currentDate.getFullYear());
 
-  // Core Data States with localStorage persistence
-  const [accounts, setAccounts] = useState<Account[]>(() => {
-    const saved = localStorage.getItem('me_accounts_v1');
-    return saved ? JSON.parse(saved) : INITIAL_ACCOUNTS;
-  });
-
-  const [categories, setCategories] = useState<Category[]>(() => {
-    const saved = localStorage.getItem('me_categories_v1');
-    return saved ? JSON.parse(saved) : INITIAL_CATEGORIES;
-  });
-
-  const [transactions, setTransactions] = useState<Transaction[]>(() => {
-    const saved = localStorage.getItem('me_transactions_v1');
-    return saved ? JSON.parse(saved) : INITIAL_TRANSACTIONS;
-  });
-
-  const [dreams, setDreams] = useState<Dream[]>(() => {
-    const saved = localStorage.getItem('me_dreams_v1');
-    return saved ? JSON.parse(saved) : INITIAL_DREAMS;
-  });
+  const [accounts, setAccounts] = useState<Account[]>(initialData.accounts);
+  const [categories, setCategories] = useState<Category[]>(initialData.categories);
+  const [transactions, setTransactions] = useState<Transaction[]>(initialData.transactions);
+  const [dreams, setDreams] = useState<Dream[]>(initialData.dreams);
+  const [rules, setRules] = useState<AutoCategoryRule[]>(initialData.rules);
 
   // Filters state
   const [selectedAccountIds, setSelectedAccountIds] = useState<string[]>(() =>
-    INITIAL_ACCOUNTS.map((a) => a.id)
+    initialData.accounts.map((account) => account.id)
   );
   const [selectedCategoryNames, setSelectedCategoryNames] = useState<string[]>([]);
   const [searchQuery, setSearchQuery] = useState<string>('');
 
   useEffect(() => {
-    if (!sessionToken) {
-      setAuthLoading(false);
-      return;
-    }
-
-    let active = true;
-    getFinanceData(sessionToken)
-      .then((data) => {
-        if (!active) return;
-        setAccounts(data.accounts);
-        setCategories(data.categories);
-        setTransactions(data.transactions);
-        setDreams(data.dreams);
-        setSelectedAccountIds(data.accounts.map((account) => account.id));
-        setDataLoaded(true);
-        setAuthError('');
-      })
-      .catch((error: unknown) => {
-        if (!active) return;
-        localStorage.removeItem('me_auth_token_v1');
-        setSessionToken(null);
-        setAuthError(
-          error instanceof Error
-            ? error.message
-            : 'Não foi possível carregar seus dados do servidor.'
-        );
-      })
-      .finally(() => {
-        if (active) setAuthLoading(false);
-      });
-
-    return () => {
-      active = false;
+    const values: Record<string, unknown> = {
+      me_accounts_v1: accounts,
+      me_categories_v1: categories,
+      me_transactions_v1: transactions,
+      me_dreams_v1: dreams,
+      me_rules_v1: rules,
     };
-  }, []);
-
-  useEffect(() => {
-    if (!sessionToken || !dataLoaded) return;
-
-    const timeout = window.setTimeout(() => {
-      const data: FinanceData = { accounts, categories, transactions, dreams };
-      setSyncError('');
-      saveQueue.current = saveQueue.current
-        .catch(() => undefined)
-        .then(() => saveFinanceData(sessionToken, data))
-        .catch((error: unknown) => {
-          setSyncError(
-            error instanceof Error
-              ? error.message
-              : 'Não foi possível salvar os dados no servidor.'
-          );
-        });
-    }, 500);
-
-    return () => window.clearTimeout(timeout);
-  }, [accounts, categories, transactions, dreams, sessionToken, dataLoaded]);
-
-  const handleAuthenticated = (response: AuthResponse) => {
-    localStorage.setItem('me_auth_token_v1', response.token);
-    localStorage.setItem('me_auth_email_v1', response.user.email);
-    for (const key of [
-      'me_accounts_v1',
-      'me_categories_v1',
-      'me_transactions_v1',
-      'me_dreams_v1',
-    ]) {
-      localStorage.removeItem(key);
-    }
-    setAccounts(response.data.accounts);
-    setCategories(response.data.categories);
-    setTransactions(response.data.transactions);
-    setDreams(response.data.dreams);
-    setSelectedAccountIds(response.data.accounts.map((account) => account.id));
-    setUserEmail(response.user.email);
-    setSessionToken(response.token);
-    setDataLoaded(true);
-    setAuthError('');
-    setSyncError('');
-  };
-
-  const handleLogout = async () => {
-    if (sessionToken) {
+    const failedKeys: string[] = [];
+    Object.entries(values).forEach(([key, value]) => {
+      if (initialData.invalidKeys.includes(key)) return;
       try {
-        await logout(sessionToken);
+        localStorage.setItem(key, JSON.stringify(value));
       } catch (error) {
-        setAuthError(
-          error instanceof Error
-            ? `A sessão foi encerrada neste navegador, mas a API não confirmou o logout: ${error.message}`
-            : 'A API não confirmou o encerramento da sessão.'
-        );
+        console.error(`Não foi possível salvar os dados locais "${key}".`, error);
+        failedKeys.push(key);
       }
-    }
-    localStorage.removeItem('me_auth_token_v1');
-    localStorage.removeItem('me_auth_email_v1');
-    setSessionToken(null);
-    setDataLoaded(false);
-    setAuthLoading(false);
-  };
+    });
+    const warnings = [
+      initialData.warning,
+      failedKeys.length
+        ? `Não foi possível salvar: ${failedKeys.join(', ')}. Exporte seus dados e verifique o espaço disponível no navegador.`
+        : '',
+    ].filter(Boolean);
+    setStorageWarning(warnings.join(' '));
+  }, [accounts, categories, transactions, dreams, rules, initialData]);
 
   // Modals state
   const [isExportModalOpen, setIsExportModalOpen] = useState(false);
+  const [isImportModalOpen, setIsImportModalOpen] = useState(false);
   const [isPdfPreviewOpen, setIsPdfPreviewOpen] = useState(false);
+  const [importStatus, setImportStatus] = useState('');
+  const [exportError, setExportError] = useState('');
+  const today = getCurrentDateInputValue();
   const [pdfConfig, setPdfConfig] = useState({
-    startDate: '2026-11-01',
-    endDate: '2026-11-30',
+    startDate: `${today.slice(0, 7)}-01`,
+    endDate: today,
     orientation: 'portrait' as 'portrait' | 'landscape',
   });
 
   // Account Modal (Create & Edit)
   const [isAccountModalOpen, setIsAccountModalOpen] = useState(false);
   const [accountToEdit, setAccountToEdit] = useState<Account | null>(null);
+  const [newAccountType, setNewAccountType] = useState<Account['type']>('corrente');
 
   // Category Modal (Create & Edit)
   const [isCategoryModalOpen, setIsCategoryModalOpen] = useState(false);
@@ -202,17 +115,10 @@ export default function App() {
   // PWA Install State & Hook for Android and mobile devices
   const { isInstallable, isInstalled, isAndroid, isIOS, install } = usePWAInstall();
   const [isInstallModalOpen, setIsInstallModalOpen] = useState(false);
-  const [showInstallBanner, setShowInstallBanner] = useState(true);
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
 
-  // Switch month automatically when switching to Transações if desired
   const handleTabChange = (tab: string) => {
     setActiveTab(tab);
-    if (tab === 'transacoes' && selectedMonth === 9) {
-      setSelectedMonth(10); // Switch to Novembro/2026 to show sample transactions
-    } else if (tab === 'inicio' && selectedMonth === 10) {
-      setSelectedMonth(9); // Switch to Outubro/2026 to show dashboard view
-    }
   };
 
   // Month navigation helpers
@@ -241,10 +147,9 @@ export default function App() {
 
   // Compute calculated balances for each account
   const accountsWithBalances: Account[] = accounts.map((acc) => {
-    const accTxs = transactions.filter(
-      (t) => t.account === acc.name && t.isConsolidated
-    );
-    const sum = accTxs.reduce((total, t) => total + t.amount, 0);
+    const sum = transactions
+      .filter((transaction) => transaction.isConsolidated)
+      .reduce((total, transaction) => total + getAccountTransactionImpact(transaction, acc.name), 0);
     return {
       ...acc,
       balance: acc.initialBalance + sum,
@@ -253,7 +158,7 @@ export default function App() {
 
   // Total current balance across selected accounts
   const totalCurrentBalance = accountsWithBalances
-    .filter((a) => selectedAccountIds.includes(a.id))
+    .filter((account) => selectedAccountIds.includes(account.id))
     .reduce((total, a) => total + a.balance, 0);
 
   // Left sidebar account selection
@@ -283,19 +188,24 @@ export default function App() {
     txData: Omit<Transaction, 'id'>,
     installmentsCount = 1
   ) => {
+    const transactionData = {
+      ...txData,
+      amount: txData.type === 'transferencia' ? -Math.abs(txData.amount) : txData.amount,
+    };
+
     if (installmentsCount > 1) {
       const newTxs: Transaction[] = [];
-      const [yearStr, monthStr, dayStr] = txData.date.split('-');
+      const [yearStr, monthStr, dayStr] = transactionData.date.split('-');
       let currentYear = parseInt(yearStr);
       let currentMonth = parseInt(monthStr);
 
       for (let i = 1; i <= installmentsCount; i++) {
         const dateStr = `${currentYear}-${String(currentMonth).padStart(2, '0')}-${dayStr}`;
         newTxs.push({
-          ...txData,
-          id: `tx-${Date.now()}-${i}`,
+          ...transactionData,
+          id: createId('tx'),
           date: dateStr,
-          description: `${txData.description} (${i} / ${installmentsCount})`,
+          description: `${transactionData.description} (${i} / ${installmentsCount})`,
           recurrenceText: `${i} / ${installmentsCount}`,
           isRecurring: true,
         });
@@ -309,11 +219,29 @@ export default function App() {
       setTransactions((prev) => [...newTxs, ...prev]);
     } else {
       const newTx: Transaction = {
-        ...txData,
-        id: `tx-${Date.now()}`,
+        ...transactionData,
+        id: createId('tx'),
       };
       setTransactions((prev) => [newTx, ...prev]);
     }
+  };
+
+  const handleAddRule = (rule: AutoCategoryRule) => {
+    setRules((previous) => {
+      const matchingIndex = previous.findIndex(
+        (item) => item.keyword.toLocaleLowerCase() === rule.keyword.toLocaleLowerCase()
+      );
+      if (matchingIndex < 0) return [...previous, rule];
+      return previous.map((item, index) =>
+        index === matchingIndex ? { ...rule, id: item.id } : item
+      );
+    });
+  };
+
+  const handleImportTransactions = (imported: Transaction[]) => {
+    setTransactions((previous) => [...imported, ...previous]);
+    setImportStatus(`${imported.length} lançamento(s) importado(s) com sucesso.`);
+    setIsImportModalOpen(false);
   };
 
   const handleOpenEditTransaction = (tx: Transaction) => {
@@ -360,8 +288,9 @@ export default function App() {
   // ==========================================
   // CRUD CONTAS (ACCOUNTS)
   // ==========================================
-  const handleOpenNewAccount = () => {
+  const handleOpenNewAccount = (type: Account['type'] = 'corrente') => {
     setAccountToEdit(null);
+    setNewAccountType(type);
     setIsAccountModalOpen(true);
   };
 
@@ -375,6 +304,9 @@ export default function App() {
     name: string;
     type: Account['type'];
     initialBalance: number;
+    creditLimit?: number;
+    closingDay?: number;
+    dueDay?: number;
   }) => {
     if (accountData.id) {
       // Edit existing account
@@ -387,6 +319,9 @@ export default function App() {
                 name: accountData.name,
                 type: accountData.type,
                 initialBalance: accountData.initialBalance,
+                creditLimit: accountData.creditLimit,
+                closingDay: accountData.closingDay,
+                dueDay: accountData.dueDay,
               }
             : a
         )
@@ -396,9 +331,18 @@ export default function App() {
       if (oldAccount && oldAccount.name !== accountData.name) {
         setTransactions((prev) =>
           prev.map((t) =>
-            t.account === oldAccount.name
-              ? { ...t, account: accountData.name }
+            t.account === oldAccount.name || t.toAccount === oldAccount.name
+              ? {
+                  ...t,
+                  account: t.account === oldAccount.name ? accountData.name : t.account,
+                  toAccount: t.toAccount === oldAccount.name ? accountData.name : t.toAccount,
+                }
               : t
+          )
+        );
+        setRules((previous) =>
+          previous.map((rule) =>
+            rule.account === oldAccount.name ? { ...rule, account: accountData.name } : rule
           )
         );
       }
@@ -411,6 +355,9 @@ export default function App() {
         initialBalance: accountData.initialBalance,
         balance: accountData.initialBalance,
         isChecked: true,
+        creditLimit: accountData.creditLimit,
+        closingDay: accountData.closingDay,
+        dueDay: accountData.dueDay,
       };
       setAccounts((prev) => [...prev, created]);
       setSelectedAccountIds((prev) => [...prev, created.id]);
@@ -425,7 +372,16 @@ export default function App() {
     // Remove or detach from transactions
     if (acc) {
       setTransactions((prev) =>
-        prev.map((t) => (t.account === acc.name ? { ...t, account: 'Sem Conta' } : t))
+        prev.map((transaction) => ({
+          ...transaction,
+          account: transaction.account === acc.name ? 'Sem Conta' : transaction.account,
+          toAccount: transaction.toAccount === acc.name ? undefined : transaction.toAccount,
+        }))
+      );
+      setRules((previous) =>
+        previous.map((rule) =>
+          rule.account === acc.name ? { ...rule, account: undefined } : rule
+        )
       );
     }
   };
@@ -467,6 +423,11 @@ export default function App() {
             t.category === oldCat.name ? { ...t, category: catData.name } : t
           )
         );
+        setRules((previous) =>
+          previous.map((rule) =>
+            rule.category === oldCat.name ? { ...rule, category: catData.name } : rule
+          )
+        );
       }
     } else if (catData.parentCategoryName) {
       // Add as subcategory to existing parent
@@ -485,7 +446,7 @@ export default function App() {
     } else {
       // Create top-level category
       const created: Category = {
-        id: `cat-${Date.now()}`,
+        id: createId('cat'),
         name: catData.name,
         type: catData.type,
       };
@@ -497,23 +458,33 @@ export default function App() {
     const cat = categories.find((c) => c.id === id);
     setCategories((prev) => prev.filter((c) => c.id !== id));
     if (cat) {
-      setSelectedCategoryNames((prev) => prev.filter((cn) => cn !== cat.name));
+      const removedNames = new Set([cat.name, ...(cat.subcategories ?? [])]);
+      setSelectedCategoryNames((prev) => prev.filter((name) => !removedNames.has(name)));
+      setRules((previous) =>
+        previous.map((rule) =>
+          removedNames.has(rule.category) ? { ...rule, category: 'Sem Categoria' } : rule
+        )
+      );
       // Point affected transactions to 'Sem Categoria'
       setTransactions((prev) =>
         prev.map((t) =>
-          t.category === cat.name ? { ...t, category: 'Sem Categoria' } : t
+          removedNames.has(t.category) ? { ...t, category: 'Sem Categoria' } : t
         )
       );
     }
   };
 
   // Export Modal Confirm
-  const handleConfirmExport = (config: {
+  const handleConfirmExport = async (config: {
     startDate: string;
     endDate: string;
     format: 'pdf' | 'xls';
     orientation: 'portrait' | 'landscape';
   }) => {
+    if (config.startDate > config.endDate) {
+      alert('A data inicial deve ser anterior ou igual à data final.');
+      return;
+    }
     setIsExportModalOpen(false);
     if (config.format === 'pdf') {
       setPdfConfig({
@@ -523,47 +494,40 @@ export default function App() {
       });
       setIsPdfPreviewOpen(true);
     } else {
-      // Direct XLS/CSV download
-      const filtered = transactions.filter(
-        (t) => t.date >= config.startDate && t.date <= config.endDate
-      );
-      const csv =
-        '\uFEFFData;Descricao;Categoria;Conta;Valor (R$)\n' +
-        filtered
-          .map(
-            (t) =>
-              `${t.date};"${t.description}";"${t.category}";"${t.account}";"${t.amount
-                .toFixed(2)
-                .replace('.', ',')}"`
-          )
-          .join('\n');
-      const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `Extrato_${config.startDate}_${config.endDate}.xls`;
-      a.click();
+      try {
+        const XLSX = await import('@e965/xlsx');
+        const filtered = transactions.filter(
+          (t) => t.date >= config.startDate && t.date <= config.endDate
+        );
+        const worksheet = XLSX.utils.json_to_sheet(filtered.map((transaction) => ({
+          Data: transaction.date,
+          Descrição: transaction.description,
+          Categoria: transaction.category,
+          Conta: transaction.account,
+          Tipo: transaction.type,
+          'Conta de destino': transaction.toAccount ?? '',
+          'Valor (R$)': transaction.amount,
+          Status: transaction.isConsolidated ? 'Consolidada' : 'Pendente',
+        })));
+        const workbook = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(workbook, worksheet, 'Lançamentos');
+        const excel = XLSX.write(workbook, { bookType: 'xlsx', type: 'array' });
+        const blob = new Blob([excel], {
+          type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `Extrato_${config.startDate}_${config.endDate}.xlsx`;
+        a.click();
+        window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+        setExportError('');
+      } catch (error) {
+        console.error('Não foi possível gerar a planilha Excel.', error);
+        setExportError('Não foi possível gerar a planilha. Tente novamente ou exporte em PDF.');
+      }
     }
   };
-
-  if (authLoading) {
-    return (
-      <main className="min-h-screen bg-[#f4f4f4] flex items-center justify-center text-gray-700">
-        Carregando seus dados...
-      </main>
-    );
-  }
-
-  if (!sessionToken) {
-    const localData: FinanceData = { accounts, categories, transactions, dreams };
-    return (
-      <AuthScreen
-        initialData={localData}
-        initialError={authError}
-        onAuthenticated={handleAuthenticated}
-      />
-    );
-  }
 
   return (
     <div className="min-h-screen bg-[#f4f4f4] text-[#000000] flex flex-col font-sans text-[14.5px] antialiased">
@@ -571,44 +535,27 @@ export default function App() {
       <Header
         activeTab={activeTab}
         setActiveTab={handleTabChange}
-        userEmail={userEmail}
-        onLogout={handleLogout}
-        onOpenExportModal={() => setIsExportModalOpen(true)}
-        onOpenInstallModal={() => setIsInstallModalOpen(true)}
-        isInstalled={isInstalled}
+        onOpenExportModal={() => {
+          setExportError('');
+          setIsExportModalOpen(true);
+        }}
+        onOpenImportModal={() => setIsImportModalOpen(true)}
       />
 
-      {syncError && (
-        <div role="alert" className="bg-red-50 border-b border-red-300 px-4 py-2 text-sm text-red-800">
-          Erro ao sincronizar com o servidor: {syncError}
+      {storageWarning && (
+        <div role="alert" className="border-b border-amber-400 bg-amber-50 px-4 py-2 text-sm text-amber-950">
+          {storageWarning}
         </div>
       )}
-
-      {/* PWA Android Install Banner */}
-      {!isInstalled && showInstallBanner && (
-        <div className="bg-[#f0f7d4] border-b border-[#c8e278] px-3 sm:px-4 py-2 text-[13px] text-[#000000] flex items-center justify-between flex-wrap gap-2 shadow-2xs select-none">
-          <div className="flex items-center gap-2">
-            <span className="text-[16px]">📱</span>
-            <span className="font-bold">
-              Instale o Minhas Economias no seu Android ou computador para acesso instantâneo e offline!
-            </span>
-          </div>
-          <div className="flex items-center gap-2">
-            <button
-              onClick={() => setIsInstallModalOpen(true)}
-              className="bg-[#82af07] hover:bg-[#6e9406] text-white font-black px-3 py-1 text-[12.5px] rounded-xs shadow-xs cursor-pointer flex items-center gap-1.5 transition-all"
-            >
-              <Smartphone className="w-3.5 h-3.5" />
-              <span>Instalar Agora</span>
-            </button>
-            <button
-              onClick={() => setShowInstallBanner(false)}
-              className="text-[#666666] hover:text-[#000000] p-1 cursor-pointer font-bold text-[13px]"
-              title="Dispensar aviso"
-            >
-              ✕
-            </button>
-          </div>
+      {importStatus && (
+        <div role="status" className="border-b border-green-300 bg-green-50 px-4 py-2 text-sm text-green-900 flex justify-between">
+          <span>{importStatus}</span>
+          <button type="button" onClick={() => setImportStatus('')} aria-label="Dispensar aviso">✕</button>
+        </div>
+      )}
+      {exportError && (
+        <div role="alert" className="border-b border-red-300 bg-red-50 px-4 py-2 text-sm text-red-900">
+          {exportError}
         </div>
       )}
 
@@ -667,6 +614,8 @@ export default function App() {
               onNextMonth={handleNextMonth}
               onSelectMonthYear={handleSelectMonthYear}
               onAddTransaction={handleAddTransaction}
+              rules={rules}
+              onCreateRule={handleAddRule}
               onEditTransaction={handleOpenEditTransaction}
               onNavigateToTransactions={() => handleTabChange('transacoes')}
             />
@@ -686,13 +635,18 @@ export default function App() {
               onNextMonth={handleNextMonth}
               onSelectMonthYear={handleSelectMonthYear}
               onAddTransaction={handleAddTransaction}
+              rules={rules}
+              onCreateRule={handleAddRule}
               onDeleteTransactions={handleDeleteTransactions}
               onDeleteTransaction={handleDeleteTransaction}
               onEditTransaction={handleOpenEditTransaction}
               onToggleConsolidate={handleToggleConsolidate}
               onBatchConsolidate={handleBatchConsolidate}
               onBatchChangeCategory={handleBatchChangeCategory}
-              onOpenExportModal={() => setIsExportModalOpen(true)}
+              onOpenExportModal={() => {
+                setExportError('');
+                setIsExportModalOpen(true);
+              }}
             />
           )}
 
@@ -730,6 +684,15 @@ export default function App() {
 
           {activeTab.startsWith('config') && (
             <ConfiguracoesView
+              initialSubTab={
+                activeTab === 'config-categorias'
+                  ? 'categorias'
+                  : activeTab === 'config-regras'
+                    ? 'regras'
+                    : activeTab === 'config-app'
+                      ? 'app'
+                      : 'contas'
+              }
               accounts={accountsWithBalances}
               categories={categories}
               onAddCategory={(cat) => setCategories((prev) => [...prev, cat])}
@@ -738,6 +701,14 @@ export default function App() {
               onOpenNewAccountModal={handleOpenNewAccount}
               onEditAccount={handleOpenEditAccount}
               onDeleteAccount={handleDeleteAccount}
+              rules={rules}
+              onAddRule={handleAddRule}
+              onDeleteRule={(id) => setRules((previous) => previous.filter((rule) => rule.id !== id))}
+              isInstalled={isInstalled}
+              isInstallable={isInstallable}
+              isAndroid={isAndroid}
+              isIOS={isIOS}
+              onOpenInstallModal={() => setIsInstallModalOpen(true)}
             />
           )}
         </div>
@@ -766,6 +737,7 @@ export default function App() {
           setAccountToEdit(null);
         }}
         accountToEdit={accountToEdit}
+        initialType={newAccountType}
         onSaveAccount={handleSaveAccount}
         onDeleteAccount={handleDeleteAccount}
       />
@@ -788,8 +760,22 @@ export default function App() {
         isOpen={isExportModalOpen}
         onClose={() => setIsExportModalOpen(false)}
         onConfirmExport={handleConfirmExport}
-        defaultStartDate="2026-11-01"
-        defaultEndDate="2026-11-30"
+        defaultStartDate={`${selectedYear}-${String(selectedMonth + 1).padStart(2, '0')}-01`}
+        defaultEndDate={formatDateInput(
+          selectedYear,
+          selectedMonth,
+          new Date(selectedYear, selectedMonth + 1, 0).getDate()
+        )}
+      />
+
+      <ImportTransactionsModal
+        isOpen={isImportModalOpen}
+        onClose={() => setIsImportModalOpen(false)}
+        accounts={accounts}
+        categories={categories}
+        rules={rules}
+        transactions={transactions}
+        onImport={handleImportTransactions}
       />
 
       {/* Authentic PDF Viewer / Print Preview Modal (Images 6 & 7) */}
@@ -797,6 +783,7 @@ export default function App() {
         isOpen={isPdfPreviewOpen}
         onClose={() => setIsPdfPreviewOpen(false)}
         transactions={transactions}
+        accounts={accounts}
         startDate={pdfConfig.startDate}
         endDate={pdfConfig.endDate}
         orientation={pdfConfig.orientation}
@@ -817,9 +804,10 @@ export default function App() {
       <MobileBottomNav
         activeTab={activeTab}
         setActiveTab={handleTabChange}
-        onOpenInstallModal={() => setIsInstallModalOpen(true)}
-        onOpenExportModal={() => setIsExportModalOpen(true)}
-        isInstalled={isInstalled}
+        onOpenExportModal={() => {
+          setExportError('');
+          setIsExportModalOpen(true);
+        }}
       />
 
       {/* Offline Status Toast Indicator */}

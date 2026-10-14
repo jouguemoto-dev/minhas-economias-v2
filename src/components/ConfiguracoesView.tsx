@@ -1,9 +1,11 @@
-import React, { useState } from 'react';
-import { Account, Category } from '../types';
+import React, { useEffect, useState } from 'react';
+import { Account, AutoCategoryRule, Category } from '../types';
 import { formatCurrency } from '../utils/formatters';
-import { Trash2, Plus, Edit2, ShieldCheck } from 'lucide-react';
+import { Trash2, Plus, Edit2, Smartphone, Check } from 'lucide-react';
+import { createId } from '../lib/persistence';
 
 interface ConfiguracoesViewProps {
+  initialSubTab: 'contas' | 'categorias' | 'regras' | 'app';
   accounts: Account[];
   categories: Category[];
   onAddCategory: (cat: Category) => void;
@@ -12,9 +14,18 @@ interface ConfiguracoesViewProps {
   onOpenNewAccountModal: () => void;
   onEditAccount: (account: Account) => void;
   onDeleteAccount: (id: string) => void;
+  rules: AutoCategoryRule[];
+  onAddRule: (rule: AutoCategoryRule) => void;
+  onDeleteRule: (id: string) => void;
+  isInstalled: boolean;
+  isInstallable: boolean;
+  isAndroid: boolean;
+  isIOS: boolean;
+  onOpenInstallModal: () => void;
 }
 
 export const ConfiguracoesView: React.FC<ConfiguracoesViewProps> = ({
+  initialSubTab,
   accounts,
   categories,
   onAddCategory,
@@ -23,10 +34,23 @@ export const ConfiguracoesView: React.FC<ConfiguracoesViewProps> = ({
   onOpenNewAccountModal,
   onEditAccount,
   onDeleteAccount,
+  rules,
+  onAddRule,
+  onDeleteRule,
+  isInstalled,
+  isInstallable,
+  isAndroid,
+  isIOS,
+  onOpenInstallModal,
 }) => {
-  const [activeSubTab, setActiveSubTab] = useState<'contas' | 'categorias' | 'regras'>('contas');
+  const [activeSubTab, setActiveSubTab] = useState(initialSubTab);
   const [newCatName, setNewCatName] = useState('');
   const [newCatType, setNewCatType] = useState<'despesa' | 'receita'>('despesa');
+  const [ruleKeyword, setRuleKeyword] = useState('');
+  const [ruleCategory, setRuleCategory] = useState('');
+  const [ruleAccount, setRuleAccount] = useState('');
+
+  useEffect(() => setActiveSubTab(initialSubTab), [initialSubTab]);
 
   const handleCreateCategory = (e: React.FormEvent) => {
     e.preventDefault();
@@ -38,6 +62,24 @@ export const ConfiguracoesView: React.FC<ConfiguracoesViewProps> = ({
     });
     setNewCatName('');
   };
+
+  const handleCreateRule = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!ruleKeyword.trim() || !ruleCategory) return;
+    onAddRule({
+      id: createId('rule'),
+      keyword: ruleKeyword.trim(),
+      category: ruleCategory,
+      account: ruleAccount || undefined,
+    });
+    setRuleKeyword('');
+    setRuleAccount('');
+  };
+
+  const categoryOptions = categories.flatMap((category) => [
+    category.name,
+    ...(category.subcategories ?? []),
+  ]);
 
   return (
     <div className="flex-1 bg-white min-w-0 text-[14.5px] font-sans select-none space-y-4 text-[#000000]">
@@ -72,6 +114,14 @@ export const ConfiguracoesView: React.FC<ConfiguracoesViewProps> = ({
             }`}
           >
             Regras
+          </button>
+          <button
+            onClick={() => setActiveSubTab('app')}
+            className={`px-4 py-1.5 text-[13.5px] font-black cursor-pointer ${
+              activeSubTab === 'app' ? 'bg-[#577708] text-white' : 'bg-gray-100 text-[#000000] hover:bg-gray-200'
+            }`}
+          >
+            Aplicativo
           </button>
         </div>
       </div>
@@ -205,13 +255,81 @@ export const ConfiguracoesView: React.FC<ConfiguracoesViewProps> = ({
       )}
 
       {activeSubTab === 'regras' && (
-        <div className="p-5 border-2 border-[#b8b8b8] bg-[#fafafa] text-center space-y-2">
-          <ShieldCheck className="w-9 h-9 text-[#82af07] mx-auto" />
-          <h4 className="font-black text-[14.5px] text-[#000000]">Regras de Categorização Automática</h4>
-          <p className="text-[#000000] font-bold max-w-md mx-auto text-[12.5px]">
-            As regras preenchem automaticamente a categoria e conta ao importar extratos bancários com base em palavras-chave da descrição.
-          </p>
+        <div className="space-y-4">
+          <div>
+            <h3 className="font-black text-[15px]">Regras de categorização automática</h3>
+            <p className="text-sm text-gray-700">Ao adicionar ou importar lançamentos, uma descrição que contenha a palavra-chave aplica a categoria e, opcionalmente, a conta escolhida.</p>
+          </div>
+          <form onSubmit={handleCreateRule} className="grid grid-cols-1 md:grid-cols-4 gap-2 border border-[#b8b8b8] bg-[#f8f8f8] p-3">
+            <input
+              value={ruleKeyword}
+              onChange={(event) => setRuleKeyword(event.target.value)}
+              placeholder="Palavra-chave, ex.: UBER"
+              aria-label="Palavra-chave da regra"
+              className="border border-[#888] bg-white px-2 py-2"
+              required
+            />
+            <select
+              value={ruleCategory}
+              onChange={(event) => setRuleCategory(event.target.value)}
+              aria-label="Categoria da regra"
+              className="border border-[#888] bg-white px-2 py-2"
+              required
+            >
+              <option value="">Selecione uma categoria</option>
+              {categoryOptions.map((category, index) => <option key={`${category}-${index}`} value={category}>{category}</option>)}
+            </select>
+            <select
+              value={ruleAccount}
+              onChange={(event) => setRuleAccount(event.target.value)}
+              aria-label="Conta da regra"
+              className="border border-[#888] bg-white px-2 py-2"
+            >
+              <option value="">Manter conta escolhida</option>
+              {accounts.map((account) => <option key={account.id} value={account.name}>{account.name}</option>)}
+            </select>
+            <button type="submit" className="bg-[#5a8710] px-3 py-2 font-bold text-white">Adicionar regra</button>
+          </form>
+          {rules.length === 0 ? (
+            <p className="border border-dashed border-gray-400 p-4 text-center text-gray-700">Nenhuma regra cadastrada.</p>
+          ) : (
+            <ul className="divide-y border border-[#b8b8b8]">
+              {rules.map((rule) => (
+                <li key={rule.id} className="flex items-center justify-between gap-3 p-3">
+                  <span><strong>Se contiver “{rule.keyword}”</strong>, usar <strong>{rule.category}</strong>{rule.account ? ` na conta ${rule.account}` : ''}</span>
+                  <button type="button" onClick={() => onDeleteRule(rule.id)} aria-label={`Excluir regra ${rule.keyword}`} className="text-red-700">
+                    <Trash2 className="h-4 w-4" />
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
         </div>
+      )}
+
+      {activeSubTab === 'app' && (
+        <section className="max-w-xl space-y-3 border border-[#b8b8b8] bg-[#fafafa] p-5">
+          <Smartphone className="h-8 w-8 text-[#82af07]" />
+          <h3 className="font-black text-[15px]">Instalação do aplicativo</h3>
+          <p className="text-sm text-gray-700">
+            {isInstalled
+              ? 'O Minhas Economias já está instalado neste dispositivo.'
+              : isInstallable
+                ? 'Instale o aplicativo para acesso rápido e uso offline.'
+                : isIOS
+                  ? 'No iPhone ou iPad, use Compartilhar e escolha “Adicionar à Tela de Início”.'
+                  : isAndroid
+                    ? 'Se o navegador oferecer a instalação, ela estará disponível aqui. Você também pode usar o menu do navegador e escolher “Instalar app”.'
+                    : 'A instalação fica disponível quando o navegador compatível oferecer o aplicativo.'}
+          </p>
+          {isInstalled ? (
+            <span className="inline-flex items-center gap-2 font-bold text-green-800"><Check className="h-4 w-4" /> Instalado</span>
+          ) : (
+            <button type="button" onClick={onOpenInstallModal} className="bg-[#5a8710] px-4 py-2 font-bold text-white">
+              {isInstallable ? 'Instalar aplicativo' : 'Ver instruções de instalação'}
+            </button>
+          )}
+        </section>
       )}
     </div>
   );

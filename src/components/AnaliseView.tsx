@@ -20,9 +20,14 @@ export const AnaliseView: React.FC<AnaliseViewProps> = ({
   const monthKey = `${selectedYear}-${String(selectedMonth + 1).padStart(2, '0')}`;
   const monthLabel = `${MONTH_NAMES_PT[selectedMonth]}/${selectedYear}`;
 
-  const currentTxs = transactions.filter(t => t.date.startsWith(monthKey));
-  const expenses = currentTxs.filter(t => t.amount < 0);
-  const incomes = currentTxs.filter(t => t.amount > 0);
+  const currentTxs = transactions.filter(
+    (transaction) =>
+      transaction.date.startsWith(monthKey) &&
+      transaction.isConsolidated &&
+      transaction.type !== 'transferencia'
+  );
+  const expenses = currentTxs.filter((transaction) => transaction.type === 'despesa');
+  const incomes = currentTxs.filter((transaction) => transaction.type === 'receita');
 
   const totalExpense = expenses.reduce((acc, t) => acc + Math.abs(t.amount), 0);
   const totalIncome = incomes.reduce((acc, t) => acc + t.amount, 0);

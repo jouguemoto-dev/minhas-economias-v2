@@ -8,6 +8,9 @@ export interface Account {
   type: 'carteira' | 'corrente' | 'cartao' | 'poupanca' | 'investimento';
   isChecked: boolean;
   color?: string;
+  creditLimit?: number;
+  closingDay?: number;
+  dueDay?: number;
 }
 
 export interface Category {
@@ -32,6 +35,14 @@ export interface Transaction {
   reminder?: string;
   note?: string;
   toAccount?: string; // for transfer
+  importFingerprint?: string;
+}
+
+export interface AutoCategoryRule {
+  id: string;
+  keyword: string;
+  category: string;
+  account?: string;
 }
 
 export interface Dream {

@@ -1,20 +1,16 @@
 import React, { useState } from 'react';
-import { Home, ReceiptText, Target, PieChart, Menu, Settings, Download, Smartphone, X, ChevronRight, BarChart2, ShieldCheck, LogOut } from 'lucide-react';
+import { Home, ReceiptText, Target, PieChart, Menu, Settings, Download, X, ChevronRight, BarChart2, ShieldCheck, Smartphone } from 'lucide-react';
 
 interface MobileBottomNavProps {
   activeTab: string;
   setActiveTab: (tab: string) => void;
-  onOpenInstallModal: () => void;
   onOpenExportModal: () => void;
-  isInstalled: boolean;
 }
 
 export const MobileBottomNav: React.FC<MobileBottomNavProps> = ({
   activeTab,
   setActiveTab,
-  onOpenInstallModal,
   onOpenExportModal,
-  isInstalled,
 }) => {
   const [moreMenuOpen, setMoreMenuOpen] = useState(false);
 
@@ -52,26 +48,6 @@ export const MobileBottomNav: React.FC<MobileBottomNavProps> = ({
 
             {/* Menu Items */}
             <div className="p-3 space-y-1 text-[14px]">
-              {/* Install on Android Highlight Card */}
-              {!isInstalled && (
-                <button
-                  onClick={() => {
-                    setMoreMenuOpen(false);
-                    onOpenInstallModal();
-                  }}
-                  className="w-full mb-2 p-3 bg-gradient-to-r from-[#82af07] to-[#6e9406] text-white rounded-lg flex items-center justify-between font-black shadow-md cursor-pointer"
-                >
-                  <div className="flex items-center gap-2.5">
-                    <Smartphone className="w-5 h-5 text-yellow-300" />
-                    <div className="text-left">
-                      <div className="text-[14px] leading-tight font-black">Instalar no Android</div>
-                      <div className="text-[11.5px] text-green-100 font-medium">Toque para adicionar à tela inicial</div>
-                    </div>
-                  </div>
-                  <ChevronRight className="w-5 h-5" />
-                </button>
-              )}
-
               {/* Análises */}
               <div className="px-3 pt-2 pb-1 text-[11.5px] font-black text-[#555555] uppercase tracking-wider">
                 Relatórios e Gráficos
@@ -159,7 +135,20 @@ export const MobileBottomNav: React.FC<MobileBottomNavProps> = ({
               >
                 <div className="flex items-center gap-3">
                   <ShieldCheck className="w-4 h-4 text-[#82af07]" />
-                  <span>Regras de Preenchimento</span>
+                  <span>Regras automáticas</span>
+                </div>
+                <ChevronRight className="w-4 h-4 text-gray-400" />
+              </button>
+              <button
+                onClick={() => {
+                  setActiveTab('config-app');
+                  setMoreMenuOpen(false);
+                }}
+                className="w-full flex items-center justify-between p-2.5 rounded-md hover:bg-[#f1f6df] text-left font-bold text-[#000000] cursor-pointer"
+              >
+                <div className="flex items-center gap-3">
+                  <Smartphone className="w-4 h-4 text-[#82af07]" />
+                  <span>Instalação do aplicativo</span>
                 </div>
                 <ChevronRight className="w-4 h-4 text-gray-400" />
               </button>
@@ -218,9 +207,6 @@ export const MobileBottomNav: React.FC<MobileBottomNavProps> = ({
         >
           <div className="p-1 rounded-full relative">
             <Menu className="w-5 h-5" />
-            {!isInstalled && (
-              <span className="absolute -top-0.5 -right-0.5 w-2.5 h-2.5 bg-[#82af07] rounded-full border-2 border-white animate-pulse" />
-            )}
           </div>
           <span className="text-[11.5px] mt-0.5 leading-tight">Mais</span>
         </button>

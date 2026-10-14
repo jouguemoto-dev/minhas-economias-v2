@@ -6,11 +6,15 @@ interface AccountModalProps {
   isOpen: boolean;
   onClose: () => void;
   accountToEdit?: Account | null;
+  initialType?: Account['type'];
   onSaveAccount: (accountData: {
     id?: string;
     name: string;
     type: Account['type'];
     initialBalance: number;
+    creditLimit?: number;
+    closingDay?: number;
+    dueDay?: number;
   }) => void;
   onDeleteAccount?: (id: string) => void;
 }
@@ -19,12 +23,16 @@ export const AccountModal: React.FC<AccountModalProps> = ({
   isOpen,
   onClose,
   accountToEdit,
+  initialType = 'corrente',
   onSaveAccount,
   onDeleteAccount,
 }) => {
   const [name, setName] = useState('');
   const [type, setType] = useState<Account['type']>('corrente');
   const [initialBalance, setInitialBalance] = useState('0,00');
+  const [creditLimit, setCreditLimit] = useState('0,00');
+  const [closingDay, setClosingDay] = useState('');
+  const [dueDay, setDueDay] = useState('');
 
   useEffect(() => {
     if (accountToEdit) {
@@ -33,12 +41,18 @@ export const AccountModal: React.FC<AccountModalProps> = ({
       setInitialBalance(
         (accountToEdit.initialBalance || 0).toFixed(2).replace('.', ',')
       );
+      setCreditLimit((accountToEdit.creditLimit || 0).toFixed(2).replace('.', ','));
+      setClosingDay(accountToEdit.closingDay?.toString() ?? '');
+      setDueDay(accountToEdit.dueDay?.toString() ?? '');
     } else {
       setName('');
-      setType('corrente');
+      setType(initialType);
       setInitialBalance('0,00');
+      setCreditLimit('0,00');
+      setClosingDay('');
+      setDueDay('');
     }
-  }, [accountToEdit, isOpen]);
+  }, [accountToEdit, initialType, isOpen]);
 
   if (!isOpen) return null;
 
@@ -49,11 +63,31 @@ export const AccountModal: React.FC<AccountModalProps> = ({
       return;
     }
     const balanceNum = parseFloat(initialBalance.replace(/\./g, '').replace(',', '.')) || 0;
+    const creditLimitNum = parseFloat(creditLimit.replace(/\./g, '').replace(',', '.')) || 0;
+    const closingDayNum = Number(closingDay);
+    const dueDayNum = Number(dueDay);
+    if (type === 'cartao') {
+      if (creditLimitNum < 0) {
+        alert('O limite do cartão não pode ser negativo.');
+        return;
+      }
+      if (closingDay && (!Number.isInteger(closingDayNum) || closingDayNum < 1 || closingDayNum > 31)) {
+        alert('Informe um dia de fechamento entre 1 e 31.');
+        return;
+      }
+      if (dueDay && (!Number.isInteger(dueDayNum) || dueDayNum < 1 || dueDayNum > 31)) {
+        alert('Informe um dia de vencimento entre 1 e 31.');
+        return;
+      }
+    }
     onSaveAccount({
       id: accountToEdit?.id,
       name: name.trim().toUpperCase(),
       type,
       initialBalance: balanceNum,
+      creditLimit: type === 'cartao' ? creditLimitNum : undefined,
+      closingDay: type === 'cartao' && closingDay ? closingDayNum : undefined,
+      dueDay: type === 'cartao' && dueDay ? dueDayNum : undefined,
     });
     onClose();
   };
@@ -122,6 +156,58 @@ export const AccountModal: React.FC<AccountModalProps> = ({
               className="w-full px-3 py-1.5 border border-[#888888] text-[14.5px] focus:outline-none bg-white text-right font-black text-[#000000]"
             />
           </div>
+
+          {type === 'cartao' && (
+            <div className="space-y-3 rounded-xs border border-[#d4dfb4] bg-[#f8faF2] p-3">
+              <h3 className="font-black text-[13.5px] text-[#385500]">Dados do cartão de crédito</h3>
+              <div className="space-y-1">
+                <label htmlFor="credit-limit" className="font-black text-[#000000] text-[13px]">
+                  Limite total (R$):
+                </label>
+                <input
+                  id="credit-limit"
+                  type="text"
+                  inputMode="decimal"
+                  placeholder="0,00"
+                  value={creditLimit}
+                  onChange={(e) => setCreditLimit(e.target.value)}
+                  className="w-full px-3 py-1.5 border border-[#888888] text-[14px] focus:outline-none bg-white text-right font-bold text-[#000000]"
+                />
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <label htmlFor="closing-day" className="font-black text-[#000000] text-[13px]">
+                    Dia de fechamento:
+                  </label>
+                  <input
+                    id="closing-day"
+                    type="number"
+                    min="1"
+                    max="31"
+                    placeholder="Ex.: 10"
+                    value={closingDay}
+                    onChange={(e) => setClosingDay(e.target.value)}
+                    className="w-full px-3 py-1.5 border border-[#888888] text-[14px] focus:outline-none bg-white text-[#000000]"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label htmlFor="due-day" className="font-black text-[#000000] text-[13px]">
+                    Dia de vencimento:
+                  </label>
+                  <input
+                    id="due-day"
+                    type="number"
+                    min="1"
+                    max="31"
+                    placeholder="Ex.: 17"
+                    value={dueDay}
+                    onChange={(e) => setDueDay(e.target.value)}
+                    className="w-full px-3 py-1.5 border border-[#888888] text-[14px] focus:outline-none bg-white text-[#000000]"
+                  />
+                </div>
+              </div>
+            </div>
+          )}
 
           {/* Action Buttons */}
           <div className="flex items-center justify-between pt-3 border-t border-[#cccccc]">

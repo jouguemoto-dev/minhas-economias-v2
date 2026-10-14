@@ -1,12 +1,15 @@
-import React, { useState } from 'react';
-import { Account, Category, Transaction, TransactionType } from '../types';
-import { HelpCircle, X, Check, Calendar as CalendarIcon, Clock, RotateCcw } from 'lucide-react';
+import React, { useId, useState } from 'react';
+import { Account, AutoCategoryRule, Category, Transaction, TransactionType } from '../types';
+import { HelpCircle, X, Check, Clock, RotateCcw } from 'lucide-react';
+import { createId, getCurrentDateInputValue } from '../lib/persistence';
 
 interface AddTransactionBarProps {
   accounts: Account[];
   categories: Category[];
   currentDateStr: string; // e.g. '2026-10-09'
   onSave: (transaction: Omit<Transaction, 'id'>, installmentsCount?: number) => void;
+  rules: AutoCategoryRule[];
+  onCreateRule: (rule: AutoCategoryRule) => void;
   onCancel: () => void;
 }
 
@@ -15,11 +18,15 @@ export const AddTransactionBar: React.FC<AddTransactionBarProps> = ({
   categories,
   currentDateStr,
   onSave,
+  rules,
+  onCreateRule,
   onCancel,
 }) => {
   const [type, setType] = useState<TransactionType>('despesa');
+  const [isConsolidated, setIsConsolidated] = useState(false);
+  const consolidationGroupName = useId();
   const [createRule, setCreateRule] = useState(false);
-  const [date, setDate] = useState(currentDateStr || '2026-10-09');
+  const [date, setDate] = useState(currentDateStr || getCurrentDateInputValue());
   const [description, setDescription] = useState('');
   const [category, setCategory] = useState('Sem Categoria');
   const [account, setAccount] = useState(accounts[0]?.name || '');
@@ -44,17 +51,44 @@ export const AddTransactionBar: React.FC<AddTransactionBarProps> = ({
       alert('Informe um valor válido maior que zero.');
       return;
     }
+    if (!account) {
+      alert('Cadastre ou selecione uma conta antes de criar o lançamento.');
+      return;
+    }
+    if (type === 'transferencia' && (!toAccount || toAccount === account)) {
+      alert('Selecione uma conta de destino diferente da conta de origem.');
+      return;
+    }
+    if (createRule && type !== 'transferencia' && !description.trim()) {
+      alert('Informe uma descrição para criar a regra automática.');
+      return;
+    }
 
-    const finalAmount = type === 'despesa' ? -Math.abs(cleanAmount) : Math.abs(cleanAmount);
+    const finalAmount = type === 'receita' ? Math.abs(cleanAmount) : -Math.abs(cleanAmount);
+    const matchedRule = type === 'transferencia'
+      ? undefined
+      : rules.find((rule) =>
+          description.trim().toLocaleLowerCase().includes(rule.keyword.toLocaleLowerCase())
+        );
+    const createdRule = createRule && type !== 'transferencia'
+      ? {
+          id: createId('rule'),
+          keyword: description.trim(),
+          category,
+          account: account || undefined,
+        }
+      : undefined;
+    if (createdRule) onCreateRule(createdRule);
+    const activeRule = createdRule ?? matchedRule;
     
     onSave({
       date,
       description: description.trim() || (type === 'transferencia' ? `Transferência para ${toAccount}` : 'Nova Transação'),
-      category: type === 'transferencia' ? 'Transferência' : category,
-      account: account || accounts[0]?.name || 'CARTEIRA *****',
+      category: type === 'transferencia' ? 'Transferência' : activeRule?.category ?? category,
+      account: activeRule?.account ?? account,
       amount: finalAmount,
       type,
-      isConsolidated: false,
+      isConsolidated,
       isRecurring: repeatMode !== 'none',
       recurrenceText: repeatMode === 'parcelamento' ? `1 / ${installments}` : undefined,
       reminder,
@@ -113,15 +147,38 @@ export const AddTransactionBar: React.FC<AddTransactionBarProps> = ({
             Transferência
           </label>
 
-          <label className="flex items-center gap-1.5 sm:gap-2 cursor-pointer opacity-95 font-bold text-white">
+          <label className="flex items-center gap-1.5 sm:gap-2 cursor-pointer font-bold text-white">
             <input
-              type="checkbox"
-              checked={createRule}
-              onChange={(e) => setCreateRule(e.target.checked)}
+              type="radio"
+              name={consolidationGroupName}
+              checked={isConsolidated}
+              onChange={() => setIsConsolidated(true)}
               className="accent-[#73a000] cursor-pointer w-4 h-4"
             />
-            Criar regra
+            Consolidada
           </label>
+          <label className="flex items-center gap-1.5 sm:gap-2 cursor-pointer font-bold text-white">
+            <input
+              type="radio"
+              name={consolidationGroupName}
+              checked={!isConsolidated}
+              onChange={() => setIsConsolidated(false)}
+              className="accent-[#73a000] cursor-pointer w-4 h-4"
+            />
+            Não consolidada
+          </label>
+
+          {type !== 'transferencia' && (
+            <label className="flex items-center gap-1.5 sm:gap-2 cursor-pointer opacity-95 font-bold text-white">
+              <input
+                type="checkbox"
+                checked={createRule}
+                onChange={(e) => setCreateRule(e.target.checked)}
+                className="accent-[#73a000] cursor-pointer w-4 h-4"
+              />
+              Criar regra
+            </label>
+          )}
         </div>
 
         <div className="flex items-center gap-2 ml-auto">

@@ -1,8 +1,13 @@
 import React, { useState } from 'react';
-import { Account, Category, Transaction } from '../types';
+import { Account, AutoCategoryRule, Category, Transaction } from '../types';
 import { formatCurrency, formatSignedAmount, formatDateShortYear, MONTH_NAMES_PT } from '../utils/formatters';
 import { AddTransactionBar } from './AddTransactionBar';
 import { Plus, HelpCircle, Maximize2, Minus, Pencil, ExternalLink } from 'lucide-react';
+import {
+  getAccountTransactionImpact,
+  getCurrentDateInputValue,
+  getYearOptions,
+} from '../lib/persistence';
 
 interface DashboardViewProps {
   transactions: Transaction[];
@@ -14,6 +19,8 @@ interface DashboardViewProps {
   onNextMonth: () => void;
   onSelectMonthYear: (year: number, month: number) => void;
   onAddTransaction: (tx: Omit<Transaction, 'id'>, count?: number) => void;
+  rules: AutoCategoryRule[];
+  onCreateRule: (rule: AutoCategoryRule) => void;
   onEditTransaction?: (tx: Transaction) => void;
   onNavigateToTransactions: () => void;
 }
@@ -28,6 +35,8 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   onNextMonth,
   onSelectMonthYear,
   onAddTransaction,
+  rules,
+  onCreateRule,
   onEditTransaction,
   onNavigateToTransactions,
 }) => {
@@ -46,32 +55,85 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
 
   const monthLabel = `${MONTH_NAMES_PT[selectedMonth]}/${selectedYear}`;
   const monthKey = `${selectedYear}-${String(selectedMonth + 1).padStart(2, '0')}`;
+  const monthStart = `${monthKey}-01`;
+  const today = getCurrentDateInputValue();
 
-  // Current month transactions
-  const currentMonthTxs = transactions.filter(t => t.date.startsWith(monthKey));
-  const incomeTotal = currentMonthTxs.filter(t => t.amount > 0).reduce((acc, t) => acc + t.amount, 0);
-  const expenseTotal = currentMonthTxs.filter(t => t.amount < 0).reduce((acc, t) => acc + Math.abs(t.amount), 0);
-  
-  // Previous balance (from before this month)
-  const previousTxs = transactions.filter(t => t.date < `${monthKey}-01`);
-  const previousBalance = previousTxs.reduce((acc, t) => acc + t.amount, 0);
+  const currentMonthTxs = transactions.filter(
+    (transaction) => transaction.date.startsWith(monthKey) && transaction.isConsolidated
+  );
+  const currentCashflowTxs = currentMonthTxs.filter((transaction) => transaction.type !== 'transferencia');
+  const incomeTotal = currentCashflowTxs
+    .filter((transaction) => transaction.type === 'receita')
+    .reduce((total, transaction) => total + Math.abs(transaction.amount), 0);
+  const expenseTotal = currentCashflowTxs
+    .filter((transaction) => transaction.type === 'despesa')
+    .reduce((total, transaction) => total + Math.abs(transaction.amount), 0);
+
+  const previousTxs = transactions.filter(
+    (transaction) =>
+      transaction.date < monthStart &&
+      transaction.isConsolidated &&
+      transaction.type !== 'transferencia'
+  );
+  const previousBalance =
+    accounts.reduce((total, account) => total + account.initialBalance, 0) +
+    previousTxs.reduce((total, transaction) => total + transaction.amount, 0);
 
   const netBalance = (includePreviousBalance ? previousBalance : 0) + incomeTotal - expenseTotal;
 
-  // Upcoming non-consolidated or next month transactions (from screenshots: November 2026)
+  // Pending transactions from today onward
   const upcomingTxs = transactions
-    .filter(t => t.date > `${monthKey}-31` || (!t.isConsolidated && t.date >= `${monthKey}-01`))
+    .filter((transaction) => !transaction.isConsolidated && transaction.date >= today)
+    .sort((first, second) => first.date.localeCompare(second.date))
     .slice(0, 8);
+  const alertTxs = upcomingTxs.filter(
+    (transaction) => transaction.reminder && transaction.reminder !== 'Nenhum'
+  );
 
-  // Past non-consolidated
-  const pastUnconsolidated = transactions.filter(t => t.date < `${monthKey}-01` && !t.isConsolidated);
+  const pastUnconsolidated = transactions
+    .filter((transaction) => transaction.date < today && !transaction.isConsolidated)
+    .sort((first, second) => second.date.localeCompare(first.date));
 
   // Category breakdown for current month
   const expenseByCategory: Record<string, number> = {};
-  currentMonthTxs.filter(t => t.amount < 0).forEach(t => {
+  currentCashflowTxs.filter((transaction) => transaction.type === 'despesa').forEach(t => {
     expenseByCategory[t.category] = (expenseByCategory[t.category] || 0) + Math.abs(t.amount);
   });
   const hasExpenses = Object.keys(expenseByCategory).length > 0;
+  const monthDays = new Date(selectedYear, selectedMonth + 1, 0).getDate();
+  const allAccountNames = accounts.map((account) => account.name);
+  let chartBalance = accounts.reduce((total, account) => total + account.initialBalance, 0);
+  transactions
+    .filter((transaction) => transaction.date < monthStart && transaction.isConsolidated)
+    .forEach((transaction) => {
+      chartBalance += allAccountNames.reduce(
+        (impact, accountName) => impact + getAccountTransactionImpact(transaction, accountName),
+        0
+      );
+    });
+  const chartBalances = [chartBalance];
+  for (let day = 1; day <= monthDays; day++) {
+    const date = `${monthKey}-${String(day).padStart(2, '0')}`;
+    transactions
+      .filter((transaction) => transaction.date === date && transaction.isConsolidated)
+      .forEach((transaction) => {
+        chartBalance += allAccountNames.reduce(
+          (impact, accountName) => impact + getAccountTransactionImpact(transaction, accountName),
+          0
+        );
+      });
+    chartBalances.push(chartBalance);
+  }
+  const chartMin = Math.min(...chartBalances);
+  const chartMax = Math.max(...chartBalances);
+  const chartRange = chartMax - chartMin || 1;
+  const chartPath = chartBalances
+    .map((balance, index) => {
+      const x = (index / monthDays) * 400;
+      const y = 164 - ((balance - chartMin) / chartRange) * 154;
+      return `${index === 0 ? 'M' : 'L'} ${x.toFixed(1)} ${y.toFixed(1)}`;
+    })
+    .join(' ');
 
   return (
     <div className="flex-1 bg-white min-w-0 text-[14.5px] font-sans select-none text-[#000000]">
@@ -99,7 +161,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
 
             {monthDropdownOpen && (
               <div className="absolute top-full left-0 mt-1 w-52 bg-white border border-[#888888] shadow-xl py-1 z-30 max-h-60 overflow-y-auto">
-                {[2026, 2027].map(yr => (
+                {getYearOptions(transactions, selectedYear).map(yr => (
                   <div key={yr}>
                     <div className="px-3 py-1 font-bold text-[12px] bg-gray-100 text-[#000000]">{yr}</div>
                     {MONTH_NAMES_PT.map((m, idx) => (
@@ -143,10 +205,15 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
         {/* Date & Last access display on right */}
         <div className="text-right">
           <div className="font-black text-[14.5px] text-[#000000]">
-            Sexta-feira, 09/10/2026
+            {new Date().toLocaleDateString('pt-BR', {
+              weekday: 'long',
+              day: '2-digit',
+              month: '2-digit',
+              year: 'numeric',
+            })}
           </div>
           <div className="text-[12.5px] font-bold text-[#000000]">
-            Último acesso: 08/10/26 às 14:52h
+            Dados salvos neste navegador
           </div>
         </div>
       </div>
@@ -156,11 +223,13 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
         <AddTransactionBar
           accounts={accounts}
           categories={categories}
-          currentDateStr={`${selectedYear}-${String(selectedMonth + 1).padStart(2, '0')}-09`}
+          currentDateStr={getCurrentDateInputValue()}
           onSave={(newTx, count) => {
             onAddTransaction(newTx, count);
             setShowAddBar(false);
           }}
+          rules={rules}
+          onCreateRule={onCreateRule}
           onCancel={() => setShowAddBar(false)}
         />
       )}
@@ -408,7 +477,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
           )}
         </div>
 
-        {/* ROW 3 - LEFT: SALDO DAS CONTAS (Interactive SVG Line Chart) */}
+        {/* ROW 3 - LEFT: SALDO DAS CONTAS */}
         <div className="bg-white border border-[#b8b8b8] shadow-xs">
           <div className="bg-[#eeeeee] border-b border-[#cccccc] px-3 py-2 flex items-center justify-between">
             <span className="font-black text-[14.5px] text-[#000000]">Saldo das contas</span>
@@ -420,37 +489,35 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                 {saldoContasOpen ? '-' : '+'}
               </button>
               <button
-                className="w-5 h-5 flex items-center justify-center border border-[#999] bg-[#ffffff] hover:bg-gray-200 text-[12px] font-bold cursor-pointer"
-                title="Expandir gráfico"
+                className="w-5 h-5 flex items-center justify-center border border-[#999] bg-[#ffffff] text-[12px] font-bold"
+                title="O gráfico mostra o saldo consolidado por dia no mês selecionado."
+                aria-label="Informação do gráfico"
               >
                 ⤢
-              </button>
-              <button
-                className="w-5 h-5 flex items-center justify-center border border-[#999] bg-[#ffffff] hover:bg-gray-200 text-[12px] font-bold cursor-pointer"
-              >
-                ?
               </button>
             </div>
           </div>
 
           {saldoContasOpen && (
-            <div className="p-3.5">
-              <div className="relative h-44 w-full border-l-2 border-b-2 border-[#555555] bg-white">
-                {/* Y-axis markings */}
-                <div className="absolute -left-14 top-0 text-[11px] text-[#000000] font-bold">
-                  R$ 1,00
-                </div>
-                <div className="absolute -left-14 bottom-0 text-[11px] text-[#000000] font-bold">
-                  R$ 0,00
+            <div className="p-3 sm:p-3.5">
+              <div className="flex h-44 w-full gap-2">
+                <div className="flex w-[58px] shrink-0 flex-col justify-between pb-0.5 text-right text-[11px] font-bold leading-none text-[#333333]">
+                  <span>{formatCurrency(chartMax)}</span>
+                  <span>{formatCurrency(chartMin)}</span>
                 </div>
 
                 {/* SVG Chart Grid & Line */}
-                <svg className="w-full h-full overflow-visible" preserveAspectRatio="none">
-                  {/* Subtle vertical day grid lines */}
-                  {Array.from({ length: 30 }).map((_, i) => (
+                <svg
+                  viewBox="0 0 400 176"
+                  className="h-full min-w-0 flex-1 border-b-2 border-l-2 border-[#777777] bg-white"
+                  preserveAspectRatio="none"
+                  role="img"
+                  aria-label="Gráfico de evolução do saldo das contas"
+                >
+                  {Array.from({ length: Math.min(monthDays, 31) }).map((_, i) => (
                     <line
                       key={i}
-                      x1={`${(i / 30) * 100}%`}
+                      x1={`${(i / Math.max(monthDays - 1, 1)) * 100}%`}
                       y1="0"
                       x2={`${(i / 30) * 100}%`}
                       y2="100%"
@@ -460,9 +527,8 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                   ))}
                   <line x1="0" y1="50%" x2="100%" y2="50%" stroke="#e0e0e0" strokeWidth="1" />
                   
-                  {/* The teal line tracking balance evolution */}
                   <path
-                    d="M 0 176 L 400 176"
+                    d={chartPath}
                     stroke="#00b4a6"
                     strokeWidth="3"
                     fill="none"
@@ -500,9 +566,21 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                 <span className="w-1/4 text-right">Valor (R$)</span>
               </div>
 
-              <div className="py-10 text-center text-red-600 font-black text-[14px]">
-                Nenhuma transação encontrada
-              </div>
+              {alertTxs.length === 0 ? (
+                <div className="py-10 text-center text-gray-600 font-bold text-[14px]">
+                  Nenhuma transação futura com lembrete
+                </div>
+              ) : (
+                <div className="space-y-1 py-1">
+                  {alertTxs.map((transaction) => (
+                    <div key={transaction.id} className="flex items-center justify-between gap-2 py-1 text-[13px]">
+                      <span className="truncate font-bold">{transaction.description}</span>
+                      <span className="shrink-0">{formatDateShortYear(transaction.date)}</span>
+                      <span className="shrink-0 font-black">{formatSignedAmount(transaction.amount)}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
               <div />
             </div>
           )}
@@ -529,18 +607,19 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
 
           {ultimasOpen && (
             <div className="p-3.5 text-[13px] space-y-2 text-[#000000] font-semibold">
-              <div className="flex items-center justify-between border-b border-gray-200 pb-1.5">
-                <span>08/10/2026 14:52 - Criação de conta corrente</span>
-                <span className="text-black font-bold">usuario@exemplo.com</span>
-              </div>
-              <div className="flex items-center justify-between border-b border-gray-200 pb-1.5">
-                <span>08/10/2026 14:48 - Inclusão de receita de exemplo</span>
-                <span className="text-black font-bold">usuario@exemplo.com</span>
-              </div>
-              <div className="flex items-center justify-between">
-                <span>08/10/2026 14:30 - Ajuste de categorias e contas</span>
-                <span className="text-black font-bold">usuario@exemplo.com</span>
-              </div>
+            {transactions.length === 0 ? (
+              <p className="text-center text-gray-600">Nenhum lançamento cadastrado.</p>
+            ) : (
+              [...transactions]
+                .sort((first, second) => second.date.localeCompare(first.date))
+                .slice(0, 5)
+                .map((transaction) => (
+                  <div key={transaction.id} className="flex items-center justify-between gap-3 border-b border-gray-200 pb-1.5">
+                    <span className="truncate">{formatDateShortYear(transaction.date)} — {transaction.description}</span>
+                    <span className="shrink-0">{transaction.isConsolidated ? 'Consolidada' : 'Pendente'}</span>
+                  </div>
+                ))
+            )}
             </div>
           )}
         </div>

@@ -74,7 +74,12 @@ export const EditTransactionModal: React.FC<EditTransactionModalProps> = ({
       return;
     }
 
-    const finalAmount = type === 'despesa' ? -Math.abs(cleanAmount) : Math.abs(cleanAmount);
+    if (type === 'transferencia' && (!toAccount || toAccount === account)) {
+      alert('Selecione uma conta de destino diferente da conta de origem.');
+      return;
+    }
+
+    const finalAmount = type === 'receita' ? Math.abs(cleanAmount) : -Math.abs(cleanAmount);
 
     onSave({
       ...transaction,

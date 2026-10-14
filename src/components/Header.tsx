@@ -1,25 +1,19 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Logo } from './Logo';
-import { ChevronDown, User, LogOut, Download, Upload, HelpCircle, Settings, PieChart, ShieldCheck, Smartphone, Check } from 'lucide-react';
+import { ChevronDown, Download, Upload, Settings, PieChart, ShieldCheck, Smartphone } from 'lucide-react';
 
 interface HeaderProps {
   activeTab: string;
   setActiveTab: (tab: string) => void;
-  userEmail?: string;
   onOpenExportModal?: () => void;
-  onOpenInstallModal?: () => void;
-  onLogout?: () => void;
-  isInstalled?: boolean;
+  onOpenImportModal?: () => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
   activeTab,
   setActiveTab,
-  userEmail = 'usuario@exemplo.com',
   onOpenExportModal,
-  onOpenInstallModal,
-  onLogout,
-  isInstalled = false,
+  onOpenImportModal,
 }) => {
   const [userMenuOpen, setUserMenuOpen] = useState(false);
   const [analiseMenuOpen, setAnaliseMenuOpen] = useState(false);
@@ -216,64 +210,36 @@ export const Header: React.FC<HeaderProps> = ({
                     <ShieldCheck className="w-4 h-4 text-[#73a000]" />
                     Regras de Preenchimento
                   </button>
+                  <button
+                    onClick={() => {
+                      setActiveTab('config-app');
+                      setConfigMenuOpen(false);
+                    }}
+                    className="w-full text-left px-3.5 py-2 hover:bg-[#f1f6df] flex items-center gap-2.5 cursor-pointer text-[#000000] font-semibold"
+                  >
+                    <Smartphone className="w-4 h-4 text-[#73a000]" />
+                    Instalação do aplicativo
+                  </button>
                 </div>
               )}
             </div>
           </nav>
         </div>
 
-        {/* Right side: Install Android Action & User Menu */}
+        {/* Right side: Actions Menu */}
         <div className="flex items-center gap-2 sm:gap-3">
-          {/* Action: Instalar no Android Button */}
-          {onOpenInstallModal && (
-            <button
-              onClick={onOpenInstallModal}
-              className={`flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-sm font-black text-[12.5px] sm:text-[13px] cursor-pointer transition-all border shadow-xs ${
-                isInstalled
-                  ? 'bg-[#678b08] hover:bg-[#577708] text-white border-[#4d6a06]'
-                  : 'bg-[#ffeb3b] hover:bg-[#fbc02d] text-[#000000] border-[#f57f17] active:scale-95'
-              }`}
-              title="Instalar Minhas Economias no Android ou tela inicial"
-            >
-              <Smartphone className="w-4 h-4 shrink-0 text-[#000000]" />
-              <span className="hidden sm:inline">
-                {isInstalled ? 'App Instalado' : 'Instalar no Android'}
-              </span>
-              <span className="sm:hidden font-extrabold">
-                {isInstalled ? 'App' : 'Instalar'}
-              </span>
-              {isInstalled && <Check className="w-3.5 h-3.5 ml-0.5 text-white" />}
-            </button>
-          )}
-
-          {/* User Account Menu */}
+          {/* Options Menu */}
           <div className="relative flex items-center" ref={userMenuRef}>
             <button
               onClick={() => setUserMenuOpen(!userMenuOpen)}
               className="flex items-center gap-1 px-2 sm:px-3 py-1.5 text-white hover:bg-[#729b06] rounded font-bold text-[12.5px] sm:text-[13.5px] cursor-pointer"
             >
-              <span className="max-w-[120px] sm:max-w-[190px] truncate">{userEmail}</span>
+              <span>Opções</span>
               <ChevronDown className="w-4 h-4 opacity-95 shrink-0" />
             </button>
 
             {userMenuOpen && (
               <div className="absolute right-0 top-full mt-1 w-56 bg-white text-[#000000] shadow-xl border border-[#b0b0b0] py-1 text-[13.5px] z-50">
-                <div className="px-3.5 py-2.5 border-b border-gray-200 bg-[#f9f9f9]">
-                  <div className="font-bold text-[#000000] truncate">{userEmail}</div>
-                  <div className="text-[12px] text-[#222222] font-semibold">Plano Gratuito</div>
-                </div>
-                {onOpenInstallModal && !isInstalled && (
-                  <button
-                    onClick={() => {
-                      onOpenInstallModal();
-                      setUserMenuOpen(false);
-                    }}
-                    className="w-full text-left px-3.5 py-2 bg-[#f8faf2] hover:bg-[#eef5d6] flex items-center gap-2.5 cursor-pointer text-[#82af07] font-black border-b border-gray-100"
-                  >
-                    <Smartphone className="w-4 h-4 text-[#82af07]" />
-                    Instalar no Android
-                  </button>
-                )}
                 <button
                   onClick={() => {
                     onOpenExportModal?.();
@@ -286,34 +252,13 @@ export const Header: React.FC<HeaderProps> = ({
                 </button>
                 <button
                   onClick={() => {
-                    alert('Funcionalidade de importação de arquivo OFX/Excel ativada.');
+                    onOpenImportModal?.();
                     setUserMenuOpen(false);
                   }}
                   className="w-full text-left px-3.5 py-2 hover:bg-[#f1f6df] flex items-center gap-2.5 cursor-pointer text-[#000000] font-medium"
                 >
                   <Upload className="w-4 h-4 text-[#000000]" />
                   Importar OFX / Excel
-                </button>
-                <button
-                  onClick={() => {
-                    alert('Central de Ajuda Minhas Economias');
-                    setUserMenuOpen(false);
-                  }}
-                  className="w-full text-left px-3.5 py-2 hover:bg-[#f1f6df] flex items-center gap-2.5 cursor-pointer text-[#000000] font-medium"
-                >
-                  <HelpCircle className="w-4 h-4 text-[#000000]" />
-                  Ajuda
-                </button>
-                <div className="border-t border-gray-200 my-1"></div>
-                <button
-                  onClick={() => {
-                    setUserMenuOpen(false);
-                    onLogout?.();
-                  }}
-                  className="w-full text-left px-3.5 py-2 hover:bg-[#f1f6df] flex items-center gap-2.5 cursor-pointer text-[#b91c1c] font-bold"
-                >
-                  <LogOut className="w-4 h-4 text-[#b91c1c]" />
-                  Sair
                 </button>
               </div>
             )}
